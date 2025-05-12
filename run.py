@@ -12,6 +12,7 @@ from overlays import initialize_hist_figure, plot_overlay_to_image, plot_strings
 from basics import histogram_figure_numba
 
 
+
 # Example function
 # You can use this function to process the images from opencv
 # This function must be implemented as a generator function
