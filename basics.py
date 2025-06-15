@@ -5,6 +5,9 @@ Created on Mon May  3 19:18:29 2021
 @author: droes
 """
 from numba import njit # conda install numba
+import numpy as np
+import math
+import cv2
 
 @njit
 def histogram_figure_numba(np_img):
@@ -16,8 +19,38 @@ def histogram_figure_numba(np_img):
     Do not use cv2 functions together with @njit
     '''
     
-    # return r_bars, g_bars, b_bars
-    return [0], [0], [0]
+    h, w, _ = np_img.shape
+    #raw counts
+    r_bars = np.zeros(256, dtype=np.float32)
+    g_bars = np.zeros(256, dtype=np.float32)
+    b_bars = np.zeros(256, dtype=np.float32)
+
+    for y in range(h):
+        for x in range(w):
+            b = np_img[y, x, 0]
+            g = np_img[y, x, 1]
+            r = np_img[y, x, 2]
+            b_bars[b] += 1.0
+            g_bars[g] += 1.0
+            r_bars[r] += 1.0
+
+    #finde globalen max-Count über alle Kanäle
+    max_c = 0.0
+    for i in range(256):
+        if b_bars[i] > max_c: max_c = b_bars[i]
+        if g_bars[i] > max_c: max_c = g_bars[i]
+        if r_bars[i] > max_c: max_c = r_bars[i]
+
+    #skaliere so, dass max_c → 3.0 (damit es zur overlays.py funktion passt)
+    if max_c > 0.0:
+        scale = 3.0 / max_c
+        for i in range(256):
+            b_bars[i] *= scale
+            g_bars[i] *= scale
+            r_bars[i] *= scale
+
+    #return r_bars, g_bars, b_bars
+    return r_bars, g_bars, b_bars
 
 
 
@@ -26,3 +59,202 @@ def histogram_figure_numba(np_img):
 ### All other basic functions
 
 ####
+'''
+#Ohne numpy
+def mean_operation(img):
+    h = len(img)
+    w = len(img[0])
+    sums = [0.0, 0.0, 0.0]
+    for y in range(h):
+        for x in range(w):
+            pixel = img[y][x]
+            for c in range(3):
+                sums[c] += pixel[c]
+    count = h * w
+    return [s / count for s in sums]
+
+def min_operation(img):
+    h = len(img)
+    w = len(img[0])
+    mins = list(img[0][0])
+    for y in range(h):
+        for x in range(w):
+            pixel = img[y][x]
+            for c in range(3):
+                if pixel[c] < mins[c]:
+                    mins[c] = pixel[c]
+    return mins
+
+
+def max_operation(img):
+    h = len(img)
+    w = len(img[0])
+    maxs = list(img[0][0])
+    for y in range(h):
+        for x in range(w):
+            pixel = img[y][x]
+            for c in range(3):
+                if pixel[c] > maxs[c]:
+                    maxs[c] = pixel[c]
+    return maxs
+
+
+def std_operation(img):
+    means = mean_operation(img)
+    h = len(img)
+    w = len(img[0])
+    sum_sq = [0.0, 0.0, 0.0]
+    for y in range(h):
+        for x in range(w):
+            pixel = img[y][x]
+            for c in range(3):
+                diff = pixel[c] - means[c]
+                sum_sq[c] += diff * diff
+    count = h * w
+    variances = [s / count for s in sum_sq]
+    return [math.sqrt(v) for v in variances]
+
+
+def mode_operation(img):
+    h = len(img)
+    w = len(img[0])
+    modes = []
+    for c in range(3):
+        freq = {}
+        for y in range(h):
+            for x in range(w):
+                val = img[y][x][c]
+                freq[val] = freq.get(val, 0) + 1
+        mode_val = max(freq.items(), key=lambda kv: kv[1])[0]
+        modes.append(mode_val)
+    return modes
+
+
+def entropy_operation(img):
+    H = len(img)
+    W = len(img[0])
+    N = H * W
+
+    #Histogramme initialisieren
+    counts_b = [0] * 256
+    counts_g = [0] * 256
+    counts_r = [0] * 256
+
+    for row in img:
+        for (b, g, r) in row:
+            counts_b[b] += 1
+            counts_g[g] += 1
+            counts_r[r] += 1
+
+    entropies = []
+    for counts in (counts_b, counts_g, counts_r):
+        Hc = 0.0
+        for cnt in counts:
+            if cnt == 0:
+                continue
+            p = cnt / N
+            Hc -= p * math.log2(p)
+        entropies.append(Hc)
+
+    return entropies #Rückgabe: Entropy für jeden Farbkanal
+
+
+def linear_transformation(img, alpha, beta):
+    H = len(img)
+    W = len(img[0])
+    out = []
+    
+    for y in range(H):
+        row_out = []
+        for x in range(W):
+            pixel = img[y][x]
+            new_pix = []
+            for c in range(3):
+                val = int(pixel[c] * alpha + beta) #lineare Transformation, Alpha = Skalierungsfaktor(Kontrast), Beta=Offset(Helligkeit)
+                #Werte auf (0,255) clippen
+                if val < 0:
+                    val = 0
+                elif val > 255:
+                    val = 255
+                new_pix.append(val)
+            row_out.append(tuple(new_pix))
+        out.append(row_out)
+    
+    return out
+
+
+#Filter
+def blur_filter(img, size): #Low-Pass-Filter -> Blurring Effekt ("nur niedrige Frequenzen dürfen durch"), Box Blur Filter
+    #Kernel erzeugen
+    kernel = np.ones((size, size), dtype=np.float32) / (size * size)
+    #Filter anwenden
+    return cv2.filter2D(img, ddepth=-1, kernel=kernel)
+
+def edge_detection_filter(img):  #High-Pass-Filter -> Kantenerkennung (Edge Detection), "nur hohe Frequenzen dürfen durch"
+    kernel = np.array([
+        [ -1, -1,  -1],
+        [-1,  8, -1],
+        [ -1, -1,  -1]
+    ], dtype=np.float32)
+    return cv2.filter2D(img, ddepth=-1, kernel=kernel)
+
+'''
+
+#mit numpy
+def mean_operation(img): 
+    return img.mean(axis=(0, 1))
+
+
+def std_operation(img): 
+    return img.std(axis=(0, 1))
+
+
+def min_operation(img):
+    return img.min(axis=(0, 1))
+
+
+def max_operation(img):
+    return img.max(axis=(0, 1))
+
+
+def mode_operation(img): 
+    modes = []
+    for c in range(img.shape[2]):
+        flat = img[:, :, c].ravel()
+        counts = np.bincount(flat, minlength=256)
+        modes.append(int(counts.argmax()))
+    return np.array(modes)
+
+def entropy_operation(img):
+    entropies = []
+    for c in range(img.shape[2]):
+        flat = img[:, :, c].ravel()
+        #Histogramm der Grauwerte 0–255
+        counts = np.bincount(flat, minlength=256).astype(np.float64)
+        probs = counts / counts.sum()
+        probs = probs[probs > 0]
+        #Entropie in bit
+        H = -np.sum(probs * np.log2(probs))
+        entropies.append(H)
+    return np.array(entropies) #Rückgabe: Entropy für jeden Farbkanal
+
+def linear_transformation(img, alpha, beta):
+    res = img.astype(np.float32) * alpha + beta #Alpha = Skalierungsfaktor(Kontrast), Beta=Offset(Helligkeit)
+    res = np.clip(res, 0, 255) #Werte auf (0,255) clippen
+    return res.astype(np.uint8)    
+
+
+#Filter
+def blur_filter(img, size): #Low-Pass-Filter -> Blurring Effekt ("nur niedrige Frequenzen dürfen durch"), Box Blur Filter
+    #Kernel erzeugen
+    kernel = np.ones((size, size), dtype=np.float32) / (size * size)
+    #Filter anwenden
+    return cv2.filter2D(img, ddepth=-1, kernel=kernel)
+
+def edge_detection_filter(img):  #High-Pass-Filter -> Kantenerkennung (Edge Detection), "nur hohe Frequenzen dürfen durch"
+    kernel = np.array([
+        [ -1, -1,  -1],
+        [-1,  8, -1],
+        [ -1, -1,  -1]
+    ], dtype=np.float32)
+    return cv2.filter2D(img, ddepth=-1, kernel=kernel)

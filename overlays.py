@@ -78,7 +78,7 @@ def plot_overlay_to_image(np_img, plt_figure):
 
 
 
-def plot_strings_to_image(np_img, list_of_string, text_color=(255,0,0), right_space=400, top_space=50):
+def plot_strings_to_image(np_img, list_of_string, text_color=(255,0,0), right_space=500, top_space=50):
     '''
     Plots the string parameters below each other, starting from top right.
     Use this function for example to plot the default image characteristics.

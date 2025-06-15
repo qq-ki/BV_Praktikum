@@ -81,7 +81,7 @@ class VirtualCamera:
         img_generator must represent a function that acts as a generator and returns image data.
         '''
         print('Quit camera stream with "q"')
-        with pyvirtualcam.Camera(width=self.width, height=self.height, fps=self.fps, print_fps=print_fps) as cam:
+        with pyvirtualcam.Camera(width=self.width, height=self.height, fps=self.fps, print_fps=print_fps, device='/dev/video4') as cam:
             for img in img_generator:
                 # provide the image
                 cam.send(img)
