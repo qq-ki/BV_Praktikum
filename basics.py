@@ -156,7 +156,7 @@ def entropy_operation(img):
             Hc -= p * math.log2(p)
         entropies.append(Hc)
 
-    return entropies #Rückgabe: Entropy für jeden Farbkanal
+    return entropies 
 
 
 def linear_transformation(img, alpha, beta):
@@ -185,18 +185,99 @@ def linear_transformation(img, alpha, beta):
 
 #Filter
 def blur_filter(img, size): #Low-Pass-Filter -> Blurring Effekt ("nur niedrige Frequenzen dürfen durch"), Box Blur Filter
-    #Kernel erzeugen
-    kernel = np.ones((size, size), dtype=np.float32) / (size * size)
-    #Filter anwenden
-    return cv2.filter2D(img, ddepth=-1, kernel=kernel)
+    h = len(img)            #size: Kernelgröße (ungerade Zahl, z.B. 3,5,7…)
+    w = len(img[0])
+    r = size // 2
+    out = [[(0,0,0) for _ in range(w)] for _ in range(h)]
+    
+    for y in range(h):
+        for x in range(w):
+            sum_b = sum_g = sum_r = 0
+            count = 0
+            for dy in range(-r, r+1):
+                for dx in range(-r, r+1):
+                    ny, nx = y+dy, x+dx
+                    if 0 <= ny < h and 0 <= nx < w:
+                        pb, pg, pr = img[ny][nx]
+                        sum_b += pb
+                        sum_g += pg
+                        sum_r += pr
+                        count += 1
+            #Mittelwert und Abrunden
+            out[y][x] = (sum_b // count,
+                         sum_g // count,
+                         sum_r // count)
 
 def edge_detection_filter(img):  #High-Pass-Filter -> Kantenerkennung (Edge Detection), "nur hohe Frequenzen dürfen durch"
-    kernel = np.array([
-        [ -1, -1,  -1],
+    h = len(img)
+    w = len(img[0])
+    kernel = [
+        [-1, -1, -1],
         [-1,  8, -1],
-        [ -1, -1,  -1]
-    ], dtype=np.float32)
-    return cv2.filter2D(img, ddepth=-1, kernel=kernel)
+        [-1, -1, -1],
+    ]
+    out = [[(0,0,0) for _ in range(w)] for _ in range(h)]
+    
+    for y in range(h):
+        for x in range(w):
+            sum_b = sum_g = sum_r = 0
+            for ky in range(3):
+                for kx in range(3):
+                    weight = kernel[ky][kx]
+                    ny = y + (ky - 1)
+                    nx = x + (kx - 1)
+                    if 0 <= ny < h and 0 <= nx < w:
+                        pb, pg, pr = img[ny][nx]
+                        sum_b += pb * weight
+                        sum_g += pg * weight
+                        sum_r += pr * weight
+            #auf [0,255] clippen
+            def clamp(v):
+                return 0 if v < 0 else 255 if v > 255 else v
+            out[y][x] = (clamp(sum_b),
+                         clamp(sum_g),
+                         clamp(sum_r))
+    return out
+
+#Equalization
+def equalization(img): #verteilt gleichmäßig die Intensitäten vom Bild über die komplette Breite vom Histogramm
+    H = len(img)
+    W = len(img[0])
+    #Ausgabe initialisieren
+    out = [[(0,0,0) for _ in range(W)] for _ in range(H)]
+
+    #Für jeden der drei Kanäle separat
+    for ch in range(3):
+        #Histogramm zählen
+        hist = [0]*256
+        for y in range(H):
+            for x in range(W):
+                val = img[y][x][ch]
+                hist[val] += 1
+
+        #kumulative Verteilung
+        cdf = [0]*256
+        running = 0
+        for i in range(256):
+            running += hist[i]
+            cdf[i] = running
+
+        cdf_min = next(v for v in cdf if v>0)
+        N = H*W
+
+        #Lookup-Table bauen
+        lut = [0]*256
+        for i in range(256):
+            lut[i] = int((cdf[i] - cdf_min) / (N - cdf_min) * 255 + 0.5)
+
+        #neue Pixel
+        for y in range(H):
+            for x in range(W):
+                pixel = list(out[y][x])
+                pixel[ch] = lut[ img[y][x][ch] ]
+                out[y][x] = tuple(pixel)
+
+    return out
 
 '''
 
@@ -258,3 +339,26 @@ def edge_detection_filter(img):  #High-Pass-Filter -> Kantenerkennung (Edge Dete
         [ -1, -1,  -1]
     ], dtype=np.float32)
     return cv2.filter2D(img, ddepth=-1, kernel=kernel)
+
+#Equalization
+def equalization(img): #verteilt gleichmäßig die Intensitäten vom Bild über die komplette Breite vom Histogramm
+    #Ausgabe initialisieren
+    out = np.zeros_like(img, dtype=np.uint8)
+    for ch in range(3):  #Für jeden Kanal einzeln:
+        #Histogramm zählen
+        flat = img[:, :, ch].ravel()
+        hist = np.bincount(flat, minlength=256).astype(np.float32)
+        
+        #kumulative Verteilungsfunktion (CDF)
+        cdf = hist.cumsum()
+        #nur Werte >0 betrachten, damit cdf_min das erste nicht-null ist
+        cdf_min = cdf[cdf > 0][0]
+        n_pixels = flat.size
+        
+        #Lookup-Tabelle bauen
+        #    → Werte in [0,255]
+        lut = ((cdf - cdf_min) / (n_pixels - cdf_min) * 255.0).clip(0,255).astype(np.uint8)
+        
+        out[:, :, ch] = lut[img[:, :, ch]]
+        
+    return out

@@ -9,15 +9,10 @@ import keyboard # pip install keyboard
 
 from capturing import VirtualCamera
 from overlays import initialize_hist_figure, plot_overlay_to_image, plot_strings_to_image, update_histogram
-from basics import histogram_figure_numba, mean_operation, mode_operation, std_operation, min_operation, max_operation, linear_transformation, entropy_operation, blur_filter, edge_detection_filter
+from basics import histogram_figure_numba, mean_operation, mode_operation, std_operation, min_operation, max_operation, linear_transformation, entropy_operation, blur_filter, edge_detection_filter, equalization
 import numpy as np
 import cv2
 import mediapipe as mp
-import matplotlib
-#matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-import matplotlib.image as mpimg
 import imageio
 
 
@@ -61,17 +56,13 @@ def overlay_image(img, overlay, x, y):
     img[y1:y2, x1:x2] = roi
     return img
 
-# Example function
-# You can use this function to process the images from opencv
-# This function must be implemented as a generator function
 
 def custom_processing(img_source_generator):
-    # Tracker für Status Histogramm, Werte, Magier
+    # Tracker für Status Histogramm, Werte, Magier, Ice-Version
     values_on = False
     histogram_on = False
     mage_on = False
     ice_on = False
-
 
     # use this figure to plot your histogram
     fig, ax, background, r_plot, g_plot, b_plot = initialize_hist_figure()
@@ -108,24 +99,44 @@ def custom_processing(img_source_generator):
         frame_idx += 1
         # Call your custom processing methods here! (e. g. filters)
         
+        #Ohne Numpy Variante:
         #Linear Transformation
         #Linear Transformation auskommentieren, wenn man sie nicht braucht
-           #Diesen Code benutzen, bei "ohne numpy" Variante
         #seq_list = sequence.tolist()
-        #seq_list = linear_transformation(seq_list, alpha=1.2, beta=50)
+        #seq_list = linear_transformation(seq_list, alpha=1.2, beta=70)
         #sequence = np.array(seq_list, dtype=np.uint8)
-           #Diesen Code benutzen, bei "mit numpy" variante
-        #sequence = linear_transformation(sequence, alpha=1.2, beta=50)
 
         #Filter
+        #Filter auskommentieren wenn man sie nicht braucht
+        #py = sequence.tolist()                           
+        #py = blur_filter(py, size=15)                       
+        #sequence = np.array(py, dtype=np.uint8) 
+        #py = sequence.tolist()                           
+        #py = edge_detection_filter(py)                       
+        #sequence = np.array(py, dtype=np.uint8)
 
-        if keyboard.is_pressed('b') :
+        #Histogram Equalization
+        #Histogram Equalization auskommentieren, wenn man sie nicht braucht
+        #py_eq = sequence.tolist()
+        #py_eq = equalization(py_eq)
+        #sequence = np.array(py_eq, dtype=np.uint8) 
+
+
+        #Mit Numpy Variante:
+
+        if keyboard.is_pressed('l') :   #Linear Transformation
+            sequence = linear_transformation(sequence, alpha=1.2, beta=70)
+
+        if keyboard.is_pressed('b') :      #Blur-Filter
             sequence = blur_filter(sequence, size=15)
 
-        if keyboard.is_pressed('e') :
+        if keyboard.is_pressed('e') :       #Edge-Detection-Filter
             sequence = edge_detection_filter(sequence)
 
-        if keyboard.is_pressed('s') :
+        if keyboard.is_pressed('z') :       #Equalization (Histogram)
+            sequence = equalization(sequence)
+
+        if keyboard.is_pressed('s') :       #Values (Mean, Mode, Max, ...)
             if values_on:
                 values_on = False
             else:
@@ -138,7 +149,7 @@ def custom_processing(img_source_generator):
             min_vals = min_operation(sequence)
             max_vals = max_operation(sequence)
             entropy_vals = entropy_operation(sequence)
-
+            #Formatiere die Strings für den Overlay-Text
             stats_text = [
                 f"Mean: R={mean_vals[2]:.1f}, G={mean_vals[1]:.1f}, B={mean_vals[0]:.1f}",
                 f"Mode: R={mode_vals[2]}, G={mode_vals[1]}, B={mode_vals[0]}",
@@ -147,22 +158,15 @@ def custom_processing(img_source_generator):
                 f"Max : R={max_vals[2]}, G={max_vals[1]}, B={max_vals[0]}",
                 f"Entr.: R={entropy_vals[2]:.2f}, G={entropy_vals[1]:.2f}, B={entropy_vals[0]:.2f}"
             ]
-
-        # If you want to use this method then consider implementing a counter
-        # that ignores for example the next five keyboard press events to
-        # "prevent" double clicks due to high fps rates
-            
-        if keyboard.is_pressed('h') :
+        
+        #Histogram Logik
+        if keyboard.is_pressed('h') :   
             if histogram_on:
                 histogram_on = False
             else:
                 histogram_on = True
         
         if histogram_on:
-            ###
-            ### Histogram overlay example (without data)
-            ###
-            
             # Load the histogram values
             r_bars, g_bars, b_bars = histogram_figure_numba(sequence)        
             
@@ -172,11 +176,8 @@ def custom_processing(img_source_generator):
             # uses the figure to create the overlay
             sequence = plot_overlay_to_image(sequence, fig)
             
-            ###
-            ### END Histogram overlay example
-            ###
 
-        ### Spezialaufgabe
+        ### Spezialaufgabe ###
         if keyboard.is_pressed('m') :
             print("Mage on/off")
             if mage_on:
@@ -191,7 +192,6 @@ def custom_processing(img_source_generator):
                 else:
                     ice_on = True
         
-
         # Face and mouth detection overlay
         # Prepare RGB image for MediaPipe
         if mage_on:
@@ -234,7 +234,7 @@ def custom_processing(img_source_generator):
                     mouth_width = right_x - left_x
 
                     if ice_on:
-                        # ICE cache
+                        # ICE cache (Ice Variante)
                         if last_ice_w is None or abs(mouth_width - last_ice_w) > 5:
                             f_h0, f_w0 = ice_frames[0].shape[:2]
                             scale_fi = (mouth_width / f_w0) * 1.5
@@ -252,7 +252,7 @@ def custom_processing(img_source_generator):
                         x_f = int(lm[LEFT_CORNER].x * w)
                         y_f = mouth_y
                     else:
-                        # FIRE cache
+                        # FIRE cache (Feuer Variante)
                         if last_fire_w is None or abs(mouth_width - last_fire_w) > 5:
                             f_h0, f_w0 = fire_frames[0].shape[:2]
                             scale_ff = (mouth_width * 3.5) / f_w0
@@ -274,9 +274,6 @@ def custom_processing(img_source_generator):
 
                     sequence = overlay_image(sequence, frame_rgba, x_f, y_f)
                     
-        # Display text example
-        #display_text_arr = ["Test", "abc"]
-        #sequence = plot_strings_to_image(sequence, display_text_arr)
         if values_on:
             sequence = plot_strings_to_image(sequence, stats_text)
         
@@ -306,4 +303,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
